@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Factory for creating site adapters."""
 from .site_adapters.dutch_tickets import DutchTicketsAdapter
+from .site_adapters.eventim import EventimAdapter
 
 
 class AdapterFactory:
@@ -9,6 +10,7 @@ class AdapterFactory:
     # Mapping of site names to adapter classes
     ADAPTERS = {
         'dutch_tickets': DutchTicketsAdapter,
+        'eventim': EventimAdapter,
     }
     
     @classmethod

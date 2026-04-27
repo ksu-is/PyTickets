@@ -1,0 +1,39 @@
+{
+  "name": "Eventim",
+  "base_url": "env:eventim_url",
+  "auth": {
+    "type": "email_password",
+    "credentials": {
+      "email": "env:eventim_email",
+      "password": "env:eventim_password",
+      "email_field_name": "loginEmail",
+      "password_field_name": "password",
+      "login_button_selector": "button.btn-login"
+    }
+  },
+  "selectors": {
+    "ticket_array_xpath": "//div[@class='eventitem']",
+    "ticket_link_xpath": "a.eventlink/@href",
+    "buy_button_class": "btn-buy-ticket",
+    "buy_button_xpath": "//button[contains(@class, 'buy')]",
+    "no_tickets_text": [
+      "No tickets available",
+      "Sold out"
+    ],
+    "success_indicators": [
+      "Added to cart",
+      "Basket updated",
+      "Continue to checkout"
+    ],
+    "error_indicators": {
+      "sold_out": "Sold out",
+      "invalid_login": "Invalid email or password",
+      "access_denied": "Access denied"
+    }
+  },
+  "proxy_required": false,
+  "rate_limit": {
+    "min_delay": 1.5,
+    "max_delay": 3.0
+  }
+}
