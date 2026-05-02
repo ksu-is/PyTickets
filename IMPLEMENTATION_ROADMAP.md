@@ -27,6 +27,12 @@ Phase 2 is now implemented in code:
 - Legacy spiders deprecated as Python 3 compatibility stubs
 - Ticketmaster and SeatGeek added as first-class discovery adapters
 
+## Live Crawl Follow-Up
+
+Live public-page crawls showed that Ticketmaster and SeatGeek block raw Scrapy
+requests with `401`/`403` responses. See `LIVE_CRAWL_FINDINGS.md` for the
+diagnostics and the planned browser-backed Selenium fetch path.
+
 ---
 
 ## 🎯 Vision

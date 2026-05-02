@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import json
 import os
+from copy import deepcopy
 from pathlib import Path
 
 
@@ -35,11 +36,7 @@ class ConfigLoader:
     def _load_config_file(self, file_path):
         """Load and parse a single config file."""
         with open(file_path, 'r', encoding='utf-8') as f:
-            config = json.load(f)
-        
-        # Substitute environment variables
-        config = self._substitute_env_vars(config)
-        return config
+            return json.load(f)
     
     def _substitute_env_vars(self, obj):
         """Recursively substitute environment variable references in config."""
@@ -75,7 +72,7 @@ class ConfigLoader:
         if site_name not in self._configs:
             raise KeyError(f"Site configuration not found: {site_name}. Available: {list(self._configs.keys())}")
         
-        return self._configs[site_name]
+        return self._substitute_env_vars(deepcopy(self._configs[site_name]))
     
     def list_available_sites(self):
         """Return list of available site configurations."""
@@ -88,4 +85,4 @@ class ConfigLoader:
             raise FileNotFoundError(f"Config file not found: {config_file}")
         
         self._configs[site_name] = self._load_config_file(config_file)
-        return self._configs[site_name]
+        return self._substitute_env_vars(deepcopy(self._configs[site_name]))

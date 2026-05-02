@@ -36,15 +36,16 @@ class RefactoredTicketsSpider(scrapy.Spider):
     name = "tickets_refactored"
 
     custom_settings = {
-        "DOWNLOAD_DELAY": 0.25
+        "DOWNLOAD_DELAY": 0.25,
+        "HTTPERROR_ALLOWED_CODES": [401, 403, 429]
     }
 
     def __init__(self, site='dutch_tickets', url=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         LoggerFactory.setup()
-        self.logger = LoggerFactory.get_logger(__name__)
-        self.logger.info(f"Initializing spider for site: {site}")
+        self.app_logger = LoggerFactory.get_logger(__name__)
+        self.app_logger.info(f"Initializing spider for site: {site}")
 
         self.site_name = site
         self.config_loader = ConfigLoader()
@@ -83,7 +84,7 @@ class RefactoredTicketsSpider(scrapy.Spider):
         if self.authenticator:
             self._authenticate()
 
-        self.start_urls = [url] if url else []
+        self.start_urls = [self._normalize_start_url(url)] if url else []
         self.first_sold_ticket_url = None
         self.successful = False
         self.iteration = 0
@@ -101,7 +102,7 @@ class RefactoredTicketsSpider(scrapy.Spider):
                     notifier_type = notifier_config.pop('type')
                     manager.add_notifier_config(notifier_type, notifier_config)
             except Exception as e:
-                self.logger.warning(f"Could not load NOTIFICATIONS_CONFIG: {str(e)}")
+                self.app_logger.warning(f"Could not load NOTIFICATIONS_CONFIG: {str(e)}")
 
         email_sender = os.environ.get('EMAIL_SENDER') or os.environ.get('email_sender')
         email_recipient = os.environ.get('EMAIL_RECIPIENT') or os.environ.get('email_recipient')
@@ -120,7 +121,7 @@ class RefactoredTicketsSpider(scrapy.Spider):
             try:
                 manager.add_notifier_config('email', email_config)
             except Exception as e:
-                self.logger.warning(f"Email notifications are not configured correctly: {str(e)}")
+                self.app_logger.warning(f"Email notifications are not configured correctly: {str(e)}")
 
         token = os.environ.get('telegram_token')
         chat_id = os.environ.get('telegram_chat_id')
@@ -169,23 +170,23 @@ class RefactoredTicketsSpider(scrapy.Spider):
     def _authenticate(self):
         """Authenticate with the website."""
         try:
-            self.logger.info(f"Authenticating with {self.site_config['auth']['type']}")
+            self.app_logger.info(f"Authenticating with {self.site_config['auth']['type']}")
             self.authenticator.authenticate(self.browser)
 
             if self.authenticator.is_authenticated(self.browser):
-                self.logger.info("Authentication successful")
+                self.app_logger.info("Authentication successful")
             else:
-                self.logger.warning("Authentication may have failed - check browser")
+                self.app_logger.warning("Authentication may have failed - check browser")
 
         except Exception as e:
-            self.logger.error(f"Authentication failed: {str(e)}")
+            self.app_logger.error(f"Authentication failed: {str(e)}")
             self._record_error(e)
             raise
 
-    def start_requests(self):
+    async def start(self):
         """Generate initial requests."""
         if not self.start_urls:
-            self.logger.warning("No URLs provided. Use: scrapy crawl tickets_refactored -a url=<url>")
+            self.app_logger.warning("No URLs provided. Use: scrapy crawl tickets_refactored -a url=<url>")
             return
 
         for url in self.start_urls:
@@ -195,36 +196,46 @@ class RefactoredTicketsSpider(scrapy.Spider):
                 dont_filter=True
             )
 
+    def _normalize_start_url(self, url):
+        """Let adapters rewrite public URLs to official API URLs when configured."""
+        normalizer = getattr(self.adapter, "normalize_start_url", None)
+        if not normalizer:
+            return url
+        normalized = normalizer(url)
+        if normalized != url:
+            self.app_logger.info(f"Normalized start URL for {self.site_name}: {normalized}")
+        return normalized
+
     def visit_first_sold_ticket(self, response):
         """Find and visit the first sold ticket listing."""
         try:
-            self.logger.info("Looking for first sold ticket listing")
+            self.app_logger.info("Looking for first sold ticket listing")
             self.first_sold_ticket_url = self.adapter.get_first_sold_ticket_url(response)
 
             if self.first_sold_ticket_url:
-                self.logger.info(f"Opening: {self.first_sold_ticket_url}")
+                self.app_logger.info(f"Opening: {self.first_sold_ticket_url}")
                 yield scrapy.Request(
                     url=self.first_sold_ticket_url,
                     callback=self.parse,
                     dont_filter=True
                 )
             else:
-                self.logger.error("Could not find first sold ticket URL")
+                self.app_logger.error("Could not find first sold ticket URL")
                 self._save_debug_html(response.body, 'no_sold_tickets.html')
 
         except Exception as e:
-            self.logger.error(f"Error in visit_first_sold_ticket: {str(e)}")
+            self.app_logger.error(f"Error in visit_first_sold_ticket: {str(e)}")
             self._record_error(e)
             self._save_debug_html(response.body, 'error_visit_sold.html')
 
     def parse(self, response):
         """Parse ticket listing page and send matching manual purchase links."""
         self.iteration += 1
-        self.logger.info(f"Parse iteration #{self.iteration}")
+        self.app_logger.info(f"Parse iteration #{self.iteration}")
 
         try:
             if not self.adapter.check_tickets_available(response):
-                self.logger.info("No tickets available, sleeping before retry")
+                self.app_logger.info("No tickets available, sleeping before retry")
 
                 rate_limits = self.adapter.get_rate_limits()
                 sleep_duration = random.uniform(rate_limits['min_delay'], rate_limits['max_delay'])
@@ -238,19 +249,13 @@ class RefactoredTicketsSpider(scrapy.Spider):
                 return
 
             if self.adapter.is_rate_limited(response):
-                self.logger.warning("Rate limited! Notifying and pausing")
+                self.app_logger.warning("Rate limited! Notifying and pausing")
                 self.notification_manager.notify("Rate limited. Waiting for manual reset.")
-                input('Press ENTER to continue after rate limit passes')
-
-                yield scrapy.Request(
-                    url=self.first_sold_ticket_url,
-                    callback=self.parse,
-                    dont_filter=True
-                )
-                return
+                self._record_error("rate limit or access block detected")
+                raise CloseSpider("rate_limited")
 
             tickets = self.adapter.extract_tickets(response)
-            self.logger.info(f"Found {len(tickets)} ticket(s)")
+            self.app_logger.info(f"Found {len(tickets)} ticket(s)")
             self.tickets_found += len(tickets)
             pending_notifications = []
 
@@ -263,11 +268,11 @@ class RefactoredTicketsSpider(scrapy.Spider):
                     ticket_data = self._build_ticket_data(ticket, ticket_url)
 
                     if self.ticket_filter and not self.ticket_filter.matches(ticket_data):
-                        self.logger.info(f"Ticket filtered out: {ticket_url}")
+                        self.app_logger.info(f"Ticket filtered out: {ticket_url}")
                         continue
 
                     if self._is_duplicate_ticket(ticket_url):
-                        self.logger.info(f"Skipping duplicate ticket: {ticket_url}")
+                        self.app_logger.info(f"Skipping duplicate ticket: {ticket_url}")
                         continue
 
                     self.database.save_ticket(ticket_data)
@@ -280,7 +285,7 @@ class RefactoredTicketsSpider(scrapy.Spider):
                 except CloseSpider:
                     raise
                 except Exception as e:
-                    self.logger.error(f"Error processing ticket: {str(e)}")
+                    self.app_logger.error(f"Error processing ticket: {str(e)}")
                     self._record_error(e)
                     continue
 
@@ -291,7 +296,7 @@ class RefactoredTicketsSpider(scrapy.Spider):
         except CloseSpider:
             raise
         except Exception as e:
-            self.logger.error(f"Error in parse: {str(e)}")
+            self.app_logger.error(f"Error in parse: {str(e)}")
             self._record_error(e)
             self._save_debug_html(response.body, 'error_parse.html')
 
@@ -352,7 +357,7 @@ class RefactoredTicketsSpider(scrapy.Spider):
                 self.database.mark_url_visited(ticket_url, ticket_data)
                 self.url_cache.mark_visited(ticket_url, ticket_data)
             else:
-                self.logger.warning(f"Ticket link was not sent; leaving URL retryable: {ticket_url}")
+                self.app_logger.warning(f"Ticket link was not sent; leaving URL retryable: {ticket_url}")
 
         if notification_sent:
             self.successful = True
@@ -411,9 +416,9 @@ class RefactoredTicketsSpider(scrapy.Spider):
             path = os.path.join(self.debug_dir, filename)
             with open(path, 'wb') as f:
                 f.write(html_body)
-            self.logger.info(f"Saved debug HTML: {path}")
+            self.app_logger.info(f"Saved debug HTML: {path}")
         except Exception as e:
-            self.logger.warning(f"Could not save debug HTML: {str(e)}")
+            self.app_logger.warning(f"Could not save debug HTML: {str(e)}")
 
     def closed(self, reason):
         """Clean up when spider closes."""
@@ -432,4 +437,4 @@ class RefactoredTicketsSpider(scrapy.Spider):
             self.browser.quit()
 
         summary = "Ticket links sent" if self.successful else "No new tickets notified"
-        self.logger.info(f"Spider closed. Status: {summary}. Reason: {reason}")
+        self.app_logger.info(f"Spider closed. Status: {summary}. Reason: {reason}")

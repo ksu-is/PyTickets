@@ -42,3 +42,15 @@ PYTICKETS_PROXIES=http://user:pass@host1:8000,http://host2:8000
 ```
 
 Supported strategies are `round_robin` and `random`.
+
+## Ticketmaster Discovery API
+
+Set `TICKETMASTER_API_KEY` in `.env`. With the key present, a public event URL
+such as `https://www.ticketmaster.com/.../event/<EVENT_ID>` is crawled through:
+
+```text
+https://app.ticketmaster.com/discovery/v2/events/<EVENT_ID>.json
+```
+
+The notification still links customers to the public Ticketmaster event page for
+manual purchase.

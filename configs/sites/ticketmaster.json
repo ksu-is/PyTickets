@@ -21,6 +21,7 @@
   },
   "api": {
     "events_endpoint": "https://app.ticketmaster.com/discovery/v2/events.json",
+    "event_endpoint": "https://app.ticketmaster.com/discovery/v2/events/{event_id}.json",
     "apikey": "env_optional:TICKETMASTER_API_KEY"
   },
   "proxy_required": false,

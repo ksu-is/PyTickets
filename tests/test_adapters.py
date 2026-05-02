@@ -128,6 +128,44 @@ class TestAdapterFactory:
         assert tickets[0]['url'] == 'https://www.ticketmaster.com/event/ABC123'
         assert tickets[0]['price'] == 40
 
+    def test_ticketmaster_normalizes_public_event_url_to_api_url(self):
+        adapter = AdapterFactory.create_adapter('ticketmaster', {
+            'base_url': 'https://www.ticketmaster.com',
+            'selectors': {},
+            'api': {
+                'event_endpoint': 'https://app.ticketmaster.com/discovery/v2/events/{event_id}.json',
+                'apikey': 'abc123',
+            }
+        })
+
+        url = adapter.normalize_start_url(
+            'https://www.ticketmaster.com/show/event/2D0064529D46D781?landing=c'
+        )
+
+        assert url == (
+            'https://app.ticketmaster.com/discovery/v2/events/2D0064529D46D781.json'
+            '?apikey=abc123'
+        )
+
+    def test_ticketmaster_extracts_single_discovery_api_event(self):
+        adapter = AdapterFactory.create_adapter('ticketmaster', {
+            'base_url': 'https://www.ticketmaster.com',
+            'selectors': {},
+        })
+        body = b'''
+        {"name":"Concert","url":"https://www.ticketmaster.com/event/ABC123","priceRanges":[{"min":40}],"dates":{"start":{"dateTime":"2026-05-02T20:00:00Z"}}}
+        '''
+        response = HtmlResponse(
+            url='https://app.ticketmaster.com/discovery/v2/events/ABC123.json',
+            body=body,
+            encoding='utf-8',
+        )
+
+        tickets = adapter.extract_tickets(response)
+
+        assert tickets[0]['url'] == 'https://www.ticketmaster.com/event/ABC123'
+        assert tickets[0]['date'] == '2026-05-02T20:00:00Z'
+
     def test_seatgeek_extracts_next_data_links(self):
         adapter = AdapterFactory.create_adapter('seatgeek', {
             'base_url': 'https://seatgeek.com',

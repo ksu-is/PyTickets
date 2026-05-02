@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 """Adapter for Ticketmaster event/search pages."""
 import json
+import re
+from urllib.parse import urlencode, urlparse
+
 from ..base_adapter import BaseAdapter
 
 
@@ -10,6 +13,20 @@ class TicketmasterAdapter(BaseAdapter):
     def __init__(self, config):
         super().__init__(config)
         self.selectors = config.get("selectors", {})
+        self.api_config = config.get("api", {})
+
+    def normalize_start_url(self, url):
+        """Use the official Discovery API when an API key and event ID are available."""
+        api_key = self.api_config.get("apikey")
+        event_id = self._extract_event_id(url)
+        if not api_key or not event_id:
+            return url
+
+        endpoint = self.api_config.get(
+            "event_endpoint",
+            "https://app.ticketmaster.com/discovery/v2/events/{event_id}.json",
+        )
+        return endpoint.format(event_id=event_id) + "?" + urlencode({"apikey": api_key})
 
     def authenticate(self, browser):
         """Ticketmaster discovery runs without login by default."""
@@ -84,6 +101,8 @@ class TicketmasterAdapter(BaseAdapter):
             return []
 
         events = data.get("_embedded", {}).get("events", [])
+        if not events and data.get("url"):
+            events = [data]
         tickets = []
         for event in events:
             url = event.get("url")
@@ -130,6 +149,12 @@ class TicketmasterAdapter(BaseAdapter):
                         "metadata": {"source": "json_ld"},
                     })
         return tickets
+
+    @staticmethod
+    def _extract_event_id(url):
+        parsed = urlparse(url)
+        match = re.search(r"/event/([^/?#]+)", parsed.path)
+        return match.group(1) if match else None
 
     @staticmethod
     def _walk_json(value):

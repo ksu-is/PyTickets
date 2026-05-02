@@ -13,13 +13,13 @@ class ProxyRotationMiddleware:
     def from_crawler(cls, crawler):
         return cls()
 
-    def process_request(self, request, spider):
+    def process_request(self, request, spider=None):
         proxy = self.manager.get_next_proxy()
         if proxy:
             request.meta["proxy"] = proxy
             request.meta["pytickets_proxy"] = proxy
 
-    def process_response(self, request, response, spider):
+    def process_response(self, request, response, spider=None):
         proxy = request.meta.get("pytickets_proxy")
         if proxy:
             if response.status in {403, 429, 500, 502, 503, 504}:
@@ -28,7 +28,7 @@ class ProxyRotationMiddleware:
                 self.manager.mark_successful(proxy)
         return response
 
-    def process_exception(self, request, exception, spider):
+    def process_exception(self, request, exception, spider=None):
         proxy = request.meta.get("pytickets_proxy")
         if proxy:
             self.manager.mark_failed(proxy)

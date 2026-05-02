@@ -101,6 +101,10 @@ Current first-class adapters:
 
 See `ADDING_NEW_SITE.md` for the adapter/config pattern used to add more sites.
 
+For Ticketmaster, set `TICKETMASTER_API_KEY` to use the official Discovery API.
+When the key is present, public Ticketmaster event URLs are automatically
+rewritten to the matching Discovery API event endpoint before crawling.
+
 ### Demo
 ![Screen Capture](https://github.com/Nedervino/TicketCrawler/blob/master/screenCapture.gif?raw=true)
 
